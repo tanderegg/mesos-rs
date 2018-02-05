@@ -1,0 +1,23 @@
+[package]
+name = "mesos"
+version = "0.1.0"
+authors = ["Tim Anderegg <timothy.anderegg@cfpb.gov>"]
+build = "build.rs"
+
+[build-dependencies]
+prost-build="*"
+
+[dependencies]
+bytes="*"
+prost="*"
+prost-derive="*"
+clap="*"
+url="*"
+
+[lib]
+name = "mesos"
+path = "src/lib.rs"
+
+[[bin]]
+name="mesos-default-executor"
+path="src/launcher/default_executor.rs"
