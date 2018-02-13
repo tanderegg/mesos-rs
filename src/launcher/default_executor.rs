@@ -4,9 +4,11 @@ extern crate url;
 
 use std::env;
 use std::rc::Rc;
+use std::collection::HashMap;
 
 use clap::{Arg, App};
-use url::{Url};
+use url::Url;
+use uuid::Uuid;
 
 use mesos::process;
 use mesos::process::Process;
@@ -14,12 +16,41 @@ use mesos::process::pid::PID;
 
 enum State {
     CONNECTED,
-    DISCONNECTED
+    DISCONNECTED,
+    SUBSCRIBED
 }
 
 enum ContentType {
     PROTOBUF,
     JSON
+}
+
+// TODO: Move to separate module
+struct Update;
+
+// TODO: Move to separate module
+struct Connection;
+
+impl Connection {
+    pub fn disconnect() {}
+}
+
+// TODO: Move to separate module
+struct Call;
+
+// TODO: Move to separate module
+struct Container {
+    container_id: mesos::ContainerId,
+    task_info: mesos::TaskInfo,
+    task_group: mesos::TaskGroupInfo,
+    last_task_status: Option<mesos::TaskStatus>,
+    // checker: Option<Rc<checks::Checker>>,
+    // health_checker: Option<Rc<checks::HealthChecker>>,
+    waiting: Option<Connection>,
+    launched: bool,
+    acknowledged: bool,
+    killing: bool,
+    killing_task_group: bool
 }
 
 struct DefaultExecutor {
@@ -36,14 +67,17 @@ struct DefaultExecutor {
     agent_url: Url,
     sandbox_dir: String,
     launcher_dir: String,
-    authorization_header: Option<String>
+    authorization_header: Option<String>,
+    unacknowledged_updates: HashMap<Uuid, Update>,
+    containers: HashMap<mesos::TaskId, Rc<Container>>,
+    connection_id: Option<Uuid>
 }
 
 impl DefaultExecutor {
     pub fn new(framework_id: mesos::FrameworkId, executor_id: mesos::ExecutorId,
         agent_url: Url, sandbox_dir: String, launcher_dir: String, authorization_header: Option<String>) -> DefaultExecutor
     {
-        DefaultExecutor{
+        DefaultExecutor {
             pid: PID::new(),
             state: State::DISCONNECTED,
             content_type: ContentType::PROTOBUF,
@@ -57,8 +91,72 @@ impl DefaultExecutor {
             agent_url: agent_url,
             sandbox_dir: sandbox_dir,
             launcher_dir: launcher_dir,
-            authorization_header: authorization_header
+            authorization_header: authorization_header,
+            unacknowledged_updates: HashMap::new(),
+            containers: HashMap::new(),
+            connection_id: None
         }
+    }
+
+    pub fn connected(&mut self) {
+        println!("Connected to agent");
+        self.state = State::CONNECTED;
+        self.connection_id = Some(Uuid::new());
+
+        self.do_reliable_registration();
+    }
+
+    pub fn disconnected(&mut self) {
+        println!("Disconnected from agent");
+
+        self.state = State::DISCONNECTED;
+        connection_id = None;
+
+        for container in self.containers {
+            if container.waiting.is_some() {
+                container.waiting.disconnect();
+                container.waiting = None;
+            }
+        }
+
+        // TODO: Pause checker and health_checker
+    }
+
+    pub fn do_reliable_registration(&self) {
+        println!("Registering with agent");
+
+        if self.state == State::SUBSCRIBED || self.state == State::DISCONNECTED {
+            return;
+        }
+
+        let call: Call;
+        call.set_type(Call::SUBSCRIBE);
+        call.mutable_framework_id().copy_from(self.framework_id);
+        call.mutable_executor_id().copy_from(self.executor_id);
+        let subscribe = call.mutable_subscribe();
+        for update in self.unacknowledged_updates {
+            subscribe.add_unacknowledged_updates().merge_from(update);
+        }
+
+        // Send all unacknowledged tasks. We don't send tasks whose container
+        // didn't launch yet, because the agent will learn about once it launches.
+        // We also don't send unacknowledged terminated (and hence already removed
+        // from `containers`) tasks, because for such tasks `WAIT_NESTED_CONTAINER`
+        // call has already succeeded, meaning the agent knows about the tasks and
+        // corresponding containers.
+        for container in self.containers {
+            if container.launched && !container.acknowledged {
+                subscribe.add_unacknowledged_tasks().merge_from(container.task_info);
+            }
+        }
+
+        self.mesos.send(call);
+
+        // delay(Seconds(1), self.get_pid(), &Self::do_reliable_registration)
+    }
+
+    pub fn launch_group(task_group: TaskGroupInfo) {
+        
     }
 }
 
@@ -71,7 +169,7 @@ impl Process for DefaultExecutor {
 
 impl Drop for DefaultExecutor {
     fn drop(&mut self) {
-        println!("Default executor {} ended.", self.get_pid())
+        println!("Default executor {} ended.", self.pid)
     }
 }
 

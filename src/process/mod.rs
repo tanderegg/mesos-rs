@@ -33,11 +33,17 @@ pub fn spawn<T: Process>(process: Rc<T>, manage: bool) -> PID {
 
     let pid = process.get_pid();
 
-    // TODO: enqueue(process);
+    enqueue(process);
 
     println!("Spawned process {}", pid);
 
     return pid;
+}
+
+fn enqueue<T: Process>(process: Rc<T>) {
+    // TODO: Check if libprocess is shutting shutting down
+    // TODO: Enqueue in Run Queue
+
 }
 
 pub fn wait<T: Process>(process: Rc<T>) {}

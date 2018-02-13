@@ -13,6 +13,7 @@ prost="*"
 prost-derive="*"
 clap="*"
 url="*"
+uuid="*"
 
 [lib]
 name = "mesos"
